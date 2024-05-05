@@ -80,39 +80,44 @@ class CFileHolder():
     def keep_bad_line(self, bad_line):
         self.list_bad_line.append(bad_line)
 
-    def fix_bad_line_to_dataframe(self, expected_columns):
+    def fix_bad_line_to_dataframe(self, expected_columns, expected_dtypes):
         expected_field_number = len(expected_columns)
         list_fixed_line = []
         for bad_line in self.list_bad_line:
             fixed_line = []
             for idx in range(expected_field_number - 1):
-                fixed_line.append(bad_line[idx])
+                objectFixed = np.nan if '' == bad_line[idx] else bad_line[idx]
+                fixed_line.append(objectFixed)
             fixed_line.append(','.join(bad_line[expected_field_number - 1:]))
             list_fixed_line.append(fixed_line)
-        return pd.DataFrame(list_fixed_line, columns=expected_columns)
-
-    def get_pres_sales_data(self, year, season):
+        return pd.DataFrame(list_fixed_line, columns=expected_columns).astype(expected_dtypes)
+    
+    def get_year_season_data_by_mode(self, year, season, mode='pre_sale'):
+        # mode = second_hand, pre_sale, rent
         year_season = f'{year}S{season}'
         csv_data_folder = None
         if year_season not in self.file_path_map:
-            csv_data_folder =self.download_unzip_file(year, season)
+            csv_data_folder = self.download_unzip_file(year, season) # TODO: recover me
+            #csv_data_folder = os.path.join(self.download_folder, year_season)
 
         if None == csv_data_folder:
             raise FileNotFoundError(f'Get data for {year_season} failed!')
         
         self.list_bad_line = []
-        file_paths = glob.glob(os.path.join(csv_data_folder, dict_file_format['pre_sale']['total']))
+        file_paths = glob.glob(os.path.join(csv_data_folder, dict_file_format[mode]['total']))
         combined_df = pd.DataFrame()
         for file_path in file_paths:
             df = pd.read_csv(file_path, quoting=csv.QUOTE_NONE, header=0, skiprows=[1], engine='python', on_bad_lines=self.keep_bad_line)
             combined_df = pd.concat([combined_df, df], ignore_index=True)
 
-        combined_df = pd.concat([combined_df, self.fix_bad_line_to_dataframe(combined_df.columns)], ignore_index=True)
+        combined_df = pd.concat([combined_df, self.fix_bad_line_to_dataframe(combined_df.columns, combined_df.dtypes)], ignore_index=True)
         combined_df['縣市'] = combined_df['土地位置建物門牌'].str.slice(stop=3)
+        combined_df['交易年'] = combined_df['交易年月日'] // 10000
+        combined_df['交易月'] = combined_df['交易年月日'] % 10000 // 100
         combined_df.replace('', np.nan, inplace=True)
         return combined_df
 
 if __name__ == '__main__':
     cFileHolder = CFileHolder()
-    df = cFileHolder.get_pres_sales_data(110, 4)
+    df = cFileHolder.get_year_season_data_by_mode(110, 4, 'pre_sale')
     print(df)
